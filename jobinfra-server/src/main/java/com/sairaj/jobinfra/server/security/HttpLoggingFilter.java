@@ -32,6 +32,17 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        String endpoint = request.getRequestURI();
+
+        // Skip logging for noisy endpoints to keep logs readable
+        if (endpoint.startsWith("/api/v1/system/metrics") || 
+            endpoint.startsWith("/swagger-ui") || 
+            endpoint.startsWith("/v3/api-docs") ||
+            endpoint.startsWith("/favicon.ico")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         long startTime = System.currentTimeMillis();
 
         try {
@@ -49,7 +60,6 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
             String userAgent = request.getHeader("User-Agent");
             String referer = request.getHeader("Referer");
             String method = request.getMethod();
-            String endpoint = request.getRequestURI();
             int status = response.getStatus();
 
             MDC.put("clientIp", ip);
@@ -72,7 +82,7 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
                 }
             }
 
-            log.info("HTTP Request Completed");
+            log.info("{} {} - {}", method, endpoint, status);
 
             // Clean up MDC for these request-specific keys
             MDC.remove("clientIp");
