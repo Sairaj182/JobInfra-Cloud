@@ -15,4 +15,7 @@ public class InMemoryJobQueue implements JobQueue{
     public Job dequeue() throws InterruptedException{
         return queue.take();
     }
+    public int size() {
+        return queue.size();
+    }
 }

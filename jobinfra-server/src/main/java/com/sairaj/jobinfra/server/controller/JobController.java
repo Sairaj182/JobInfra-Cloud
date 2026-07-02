@@ -3,6 +3,8 @@ package com.sairaj.jobinfra.server.controller;
 import com.sairaj.jobinfra.core.Job;
 import com.sairaj.jobinfra.service.JobService;
 import com.sairaj.jobinfra.server.controller.dto.ApiResponse;
+import com.sairaj.jobinfra.server.service.AuditLogger;
+import com.sairaj.jobinfra.server.service.MetricsRegistry;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +17,13 @@ import java.util.Collection;
 public class JobController {
 
     private final JobService jobService;
+    private final AuditLogger auditLogger;
+    private final MetricsRegistry metricsRegistry;
 
-    public JobController(JobService jobService) {
+    public JobController(JobService jobService, AuditLogger auditLogger, MetricsRegistry metricsRegistry) {
         this.jobService = jobService;
+        this.auditLogger = auditLogger;
+        this.metricsRegistry = metricsRegistry;
     }
 
     @PostMapping
@@ -36,6 +42,12 @@ public class JobController {
                 projectId,
                 request.getPayload()
         );
+        
+        metricsRegistry.incrementJobsSubmitted();
+        auditLogger.logJob("SUBMITTED", jobId, projectId, null, 
+                request.getExecutionType() != null ? request.getExecutionType().name() : null, 
+                null, null, "QUEUED");
+        
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(jobId));
     }
 
@@ -55,7 +67,17 @@ public class JobController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<com.sairaj.jobinfra.server.controller.dto.ApiResponse<Void>> deleteJob(@PathVariable String id) {
+        Job job = jobService.get(id);
+        if (job != null) {
+            String projectId = job.getProjectId();
+            auditLogger.logJob("CANCELLED", id, projectId, null, 
+                    job.getExecutionType() != null ? job.getExecutionType().name() : null, 
+                    null, null, "CANCELLED");
+            metricsRegistry.incrementJobsCancelled();
+        }
+        
         jobService.delete(id);
+        
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(null));
     }
 

@@ -5,6 +5,7 @@ import com.sairaj.jobinfra.server.domain.ProjectEntity;
 import com.sairaj.jobinfra.server.domain.UserEntity;
 import com.sairaj.jobinfra.server.repository.ProjectRepository;
 import com.sairaj.jobinfra.server.repository.UserRepository;
+import com.sairaj.jobinfra.server.service.AuditLogger;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,10 +22,12 @@ public class ProjectController {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final AuditLogger auditLogger;
 
-    public ProjectController(ProjectRepository projectRepository, UserRepository userRepository) {
+    public ProjectController(ProjectRepository projectRepository, UserRepository userRepository, AuditLogger auditLogger) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.auditLogger = auditLogger;
     }
 
     private UserEntity getCurrentUser() {
@@ -37,6 +40,9 @@ public class ProjectController {
         UserEntity user = getCurrentUser();
         ProjectEntity project = new ProjectEntity(request.getName(), user);
         projectRepository.save(project);
+        
+        auditLogger.logProject("CREATED", String.valueOf(project.getId()), project.getName(), user.getUsername());
+        
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(new ProjectDto(project.getId(), project.getName())));
     }
 
@@ -57,6 +63,9 @@ public class ProjectController {
             return ResponseEntity.status(403).body(com.sairaj.jobinfra.server.controller.dto.ApiResponse.error("FORBIDDEN", "Not allowed"));
         }
         projectRepository.delete(project);
+        
+        auditLogger.logProject("DELETED", String.valueOf(project.getId()), project.getName(), user.getUsername());
+        
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(null));
     }
 }

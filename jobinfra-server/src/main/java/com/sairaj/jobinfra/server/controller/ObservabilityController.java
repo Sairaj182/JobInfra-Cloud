@@ -1,12 +1,10 @@
 package com.sairaj.jobinfra.server.controller;
 
+import com.sairaj.jobinfra.queue.JobQueue;
 import com.sairaj.jobinfra.server.controller.dto.ApiResponse;
-import com.sairaj.jobinfra.server.repository.UserRepository;
-import com.sairaj.jobinfra.server.repository.ProjectRepository;
-import com.sairaj.jobinfra.server.repository.JobRepository;
+import com.sairaj.jobinfra.server.service.MetricsRegistry;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.sql.DataSource;
@@ -19,16 +17,13 @@ import java.util.Map;
 public class ObservabilityController {
 
     private final DataSource dataSource;
-    private final UserRepository userRepository;
-    private final ProjectRepository projectRepository;
-    private final JobRepository jobRepository;
+    private final MetricsRegistry metricsRegistry;
+    private final JobQueue jobQueue;
 
-    public ObservabilityController(DataSource dataSource, UserRepository userRepository, 
-                                   ProjectRepository projectRepository, JobRepository jobRepository) {
+    public ObservabilityController(DataSource dataSource, MetricsRegistry metricsRegistry, JobQueue jobQueue) {
         this.dataSource = dataSource;
-        this.userRepository = userRepository;
-        this.projectRepository = projectRepository;
-        this.jobRepository = jobRepository;
+        this.metricsRegistry = metricsRegistry;
+        this.jobQueue = jobQueue;
     }
 
     @GetMapping("/")
@@ -46,7 +41,7 @@ public class ObservabilityController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> version() {
         Map<String, Object> versionInfo = new LinkedHashMap<>();
         versionInfo.put("version", "1.0.0");
-        versionInfo.put("buildTime", Instant.now().toString()); // Placeholder unless build-info is injected
+        versionInfo.put("buildTime", Instant.now().toString()); 
         versionInfo.put("commit", "latest");
         return ResponseEntity.ok(ApiResponse.success(versionInfo));
     }
@@ -56,7 +51,7 @@ public class ObservabilityController {
         Map<String, Object> health = new LinkedHashMap<>();
         health.put("status", "UP");
         health.put("database", checkDatabase());
-        health.put("uptimeSeconds", ManagementFactory.getRuntimeMXBean().getUptime() / 1000);
+        health.put("uptimeSeconds", metricsRegistry.getUptimeMs() / 1000);
         health.put("timestamp", Instant.now().toString());
         return ResponseEntity.ok(ApiResponse.success(health));
     }
@@ -64,12 +59,25 @@ public class ObservabilityController {
     @GetMapping("/api/v1/system/metrics")
     public ResponseEntity<ApiResponse<Map<String, Object>>> metrics() {
         Map<String, Object> metrics = new LinkedHashMap<>();
-        metrics.put("database", checkDatabase());
-        metrics.put("uptimeSeconds", ManagementFactory.getRuntimeMXBean().getUptime() / 1000);
-        metrics.put("totalUsers", userRepository.count());
-        metrics.put("totalProjects", projectRepository.count());
-        metrics.put("totalJobs", jobRepository.count());
-        // For job statuses, we could do count by status, but keep it simple for now as requested
+        
+        metrics.put("applicationUptimeSeconds", metricsRegistry.getUptimeMs() / 1000);
+        metrics.put("queueSize", jobQueue.size());
+        
+        metrics.put("jobsSubmitted", metricsRegistry.getJobsSubmitted());
+        metrics.put("jobsRunning", metricsRegistry.getJobsRunning());
+        metrics.put("jobsCompleted", metricsRegistry.getJobsCompleted());
+        metrics.put("jobsFailed", metricsRegistry.getJobsFailed());
+        metrics.put("jobsCancelled", metricsRegistry.getJobsCancelled());
+        
+        metrics.put("requestsServed", metricsRegistry.getRequestsServed());
+        metrics.put("averageResponseTimeMs", metricsRegistry.getAverageResponseTimeMs());
+        metrics.put("maxResponseTimeMs", metricsRegistry.getMaxResponseTimeMs());
+        
+        Runtime runtime = Runtime.getRuntime();
+        metrics.put("heapMemoryUsedMb", (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024));
+        metrics.put("heapMemoryMaxMb", runtime.maxMemory() / (1024 * 1024));
+        metrics.put("availableProcessors", runtime.availableProcessors());
+        
         return ResponseEntity.ok(ApiResponse.success(metrics));
     }
 

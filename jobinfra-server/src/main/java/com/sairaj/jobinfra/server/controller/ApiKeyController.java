@@ -7,6 +7,7 @@ import com.sairaj.jobinfra.server.domain.UserEntity;
 import com.sairaj.jobinfra.server.repository.ApiKeyRepository;
 import com.sairaj.jobinfra.server.repository.ProjectRepository;
 import com.sairaj.jobinfra.server.repository.UserRepository;
+import com.sairaj.jobinfra.server.service.AuditLogger;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,13 +28,15 @@ public class ApiKeyController {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogger auditLogger;
 
     public ApiKeyController(ApiKeyRepository apiKeyRepository, ProjectRepository projectRepository,
-                            UserRepository userRepository, PasswordEncoder passwordEncoder) {
+                            UserRepository userRepository, PasswordEncoder passwordEncoder, AuditLogger auditLogger) {
         this.apiKeyRepository = apiKeyRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogger = auditLogger;
     }
 
     private UserEntity getCurrentUser() {
@@ -54,6 +57,8 @@ public class ApiKeyController {
 
         ApiKeyEntity apiKey = new ApiKeyEntity(keyHash, request.getDescription(), project);
         apiKeyRepository.save(apiKey);
+        
+        auditLogger.logApiKey("GENERATED", String.valueOf(project.getId()), String.valueOf(apiKey.getId()), user.getUsername());
 
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(new ApiKeyResponse(apiKey.getId(), rawKey, apiKey.getDescription(), apiKey.getCreatedAt())));
     }
@@ -104,6 +109,9 @@ public class ApiKeyController {
         }
 
         apiKeyRepository.delete(key);
+        
+        auditLogger.logApiKey("REVOKED", String.valueOf(project.getId()), String.valueOf(key.getId()), user.getUsername());
+        
         return ResponseEntity.ok(com.sairaj.jobinfra.server.controller.dto.ApiResponse.success(null));
     }
 }

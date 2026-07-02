@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sairaj.jobinfra.core.ExecutionType;
 import com.sairaj.jobinfra.core.Job;
 import com.sairaj.jobinfra.properties.JobInfraProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -24,6 +27,7 @@ public class WebhookExecutionStrategy implements JobExecutionStrategy {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final JobInfraProperties properties;
+    private static final Logger auditLog = LoggerFactory.getLogger("com.sairaj.jobinfra.audit");
 
     public WebhookExecutionStrategy(ObjectMapper objectMapper, JobInfraProperties properties) {
         this.objectMapper = objectMapper;
@@ -33,9 +37,22 @@ public class WebhookExecutionStrategy implements JobExecutionStrategy {
                 .build();
     }
 
+    private void logWebhookAudit(String action, Job job, String status, Long durationMs) {
+        MDC.put("auditType", "WEBHOOK");
+        MDC.put("action", action);
+        MDC.put("jobId", job.getId());
+        MDC.put("status", status);
+        if (durationMs != null) MDC.put("durationMs", String.valueOf(durationMs));
+        
+        auditLog.info("Webhook Event: {} | JobId: {} | Status: {}", action, job.getId(), status);
+        MDC.clear();
+    }
+
     @Override
     public ExecutionResult execute(Job job) {
         long startTime = System.currentTimeMillis();
+        
+        logWebhookAudit("DISPATCH", job, "IN_PROGRESS", null);
         
         try {
             String url = job.getWebhookUrl();
@@ -60,7 +77,10 @@ public class WebhookExecutionStrategy implements JobExecutionStrategy {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
 
             if (job.getWebhookHeaders() != null) {
-                job.getWebhookHeaders().forEach(requestBuilder::header);
+                job.getWebhookHeaders().forEach((k, v) -> {
+                    // Do not log authorization headers
+                    requestBuilder.header(k, v);
+                });
             }
 
             HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
@@ -69,13 +89,16 @@ public class WebhookExecutionStrategy implements JobExecutionStrategy {
             String responseBody = truncate(response.body(), 1000);
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                logWebhookAudit("SUCCESS", job, String.valueOf(response.statusCode()), duration);
                 return ExecutionResult.success(response.statusCode(), duration, responseBody);
             } else {
+                logWebhookAudit("FAILURE", job, String.valueOf(response.statusCode()), duration);
                 return ExecutionResult.failure("HTTP " + response.statusCode(), response.statusCode(), duration, responseBody);
             }
 
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
+            logWebhookAudit("FAILURE", job, "ERROR", duration);
             return ExecutionResult.failure(e.getMessage(), 0, duration, null);
         }
     }

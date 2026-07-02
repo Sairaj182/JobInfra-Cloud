@@ -1,5 +1,8 @@
 package com.sairaj.jobinfra.server.security;
 
+import com.sairaj.jobinfra.server.service.AuditLogger;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,10 +21,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsServiceImpl userDetailsService;
+    private final AuditLogger auditLogger;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsServiceImpl userDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsServiceImpl userDetailsService, AuditLogger auditLogger) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
+        this.auditLogger = auditLogger;
     }
 
     @Override
@@ -29,20 +34,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         final String authHeader = request.getHeader("Authorization");
         final String jwt;
-        final String username;
+        String username = null;
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;
         }
+        
         jwt = authHeader.substring(7);
-        username = jwtService.extractUsername(jwt);
+
+        try {
+            username = jwtService.extractUsername(jwt);
+        } catch (ExpiredJwtException e) {
+            auditLogger.logAuth("JWT_VALIDATION", "UNKNOWN", false, "Expired JWT");
+        } catch (JwtException e) {
+            auditLogger.logAuth("JWT_VALIDATION", "UNKNOWN", false, "Invalid JWT");
+        } catch (Exception e) {
+            auditLogger.logAuth("JWT_VALIDATION", "UNKNOWN", false, "JWT Processing Error: " + e.getMessage());
+        }
+
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            
+            try {
+                if (jwtService.isTokenValid(jwt, userDetails)) {
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    auditLogger.logAuth("JWT_VALIDATION", username, false, "Invalid JWT for user");
+                }
+            } catch (Exception e) {
+                auditLogger.logAuth("JWT_VALIDATION", username, false, "JWT Validation Error");
             }
         }
         filterChain.doFilter(request, response);

@@ -55,9 +55,9 @@ public class JobInfraAutoConfiguration {
     }
 
     @Bean
-    public WorkerPool workerPool(JobQueue queue, List<JobExecutionStrategy> strategies, JobInfraProperties properties) {
+    public WorkerPool workerPool(JobQueue queue, List<JobExecutionStrategy> strategies, JobInfraProperties properties, org.springframework.context.ApplicationEventPublisher eventPublisher) {
         int poolSize = properties.getWorker().getCount();
-        return new WorkerPool(queue, strategies, poolSize);
+        return new WorkerPool(queue, strategies, poolSize, eventPublisher);
     }
 
 }
