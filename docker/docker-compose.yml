@@ -5,6 +5,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: jobinfra
+      TZ: Asia/Kolkata
     ports:
       - "5432:5432"
     volumes:
@@ -20,6 +21,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/jobinfra
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      TZ: Asia/Kolkata
     env_file:
       - ../.env
     depends_on:
